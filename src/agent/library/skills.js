@@ -14,7 +14,7 @@ async function autoLight(bot) {
     if (world.shouldPlaceTorch(bot)) {
         try {
             const pos = world.getPosition(bot);
-            return await placeBlock(bot, 'torch', pos.x, pos.y, pos.z, 'bottom', true);
+            return await placeBlock(bot, 'torch', pos.x, pos.y, pos.z, true);
         } catch (err) {return false;}
     }
     return false;
@@ -251,7 +251,7 @@ export async function attackNearest(bot, mobType, kill=true) {
      * await skills.attackNearest(bot, "zombie", true);
      **/
     bot.modes.pause('cowardice');
-    const mob = world.getNearbyEntities(bot, 24).find(entity => entity.name === mobType);
+    const mob = world.getNearbyEntities(bot, 64).find(entity => entity.name === mobType);
     if (mob) {
         return await attackEntity(bot, mob, kill);
     }
@@ -306,6 +306,12 @@ export async function defendSelf(bot, range=9) {
      * @example
      * await skills.defendSelf(bot);
      * **/
+
+    if (bot.pathfinder.isMoving()) {
+        log(bot, 'Already moving, cannot initiate another move.');
+        return false;
+    }
+
     bot.modes.pause('self_defense');
     bot.modes.pause('cowardice');
     let attacked = false;
@@ -360,7 +366,7 @@ export async function collectBlock(bot, blockType, num=1, exclude=null) {
     let collected = 0;
 
     for (let i=0; i<num; i++) {
-        let blocks = world.getNearestBlocks(bot, blocktypes, 64);
+        let blocks = world.getNearestBlocks(bot, blocktypes, 128);
         if (exclude) {
             for (let position of exclude) {
                 blocks = blocks.filter(
@@ -385,7 +391,7 @@ export async function collectBlock(bot, blockType, num=1, exclude=null) {
         try {
             await bot.collectBlock.collect(block);
             collected++;
-            await autoLight(bot);
+            // await autoLight(bot);
         }
         catch (err) {
             if (err.name === 'NoChests') {
@@ -482,7 +488,7 @@ export async function breakBlockAt(bot, x, y, z) {
 }
 
 
-export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dontCheat=false) {
+export async function placeBlock(bot, blockType, x, y, z, no_cheat=false) {
     /**
      * Place the given block type at the given position. It will build off from any adjacent blocks. Will fail if there is a block in the way or nothing to build off of.
      * @param {MinecraftBot} bot, reference to the minecraft bot.
@@ -490,65 +496,31 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
      * @param {number} x, the x coordinate of the block to place.
      * @param {number} y, the y coordinate of the block to place.
      * @param {number} z, the z coordinate of the block to place.
-     * @param {string} placeOn, the preferred side of the block to place on. Can be 'top', 'bottom', 'north', 'south', 'east', 'west', or 'side'. Defaults to bottom. Will place on first available side if not possible.
-     * @param {boolean} dontCheat, overrides cheat mode to place the block normally. Defaults to false.
+     * @param {boolean} no_cheat, overrides cheat mode to place the block normally. Defaults to false.
      * @returns {Promise<boolean>} true if the block was placed, false otherwise.
      * @example
-     * let p = world.getPosition(bot);
-     * await skills.placeBlock(bot, "oak_log", p.x + 2, p.y, p.x);
-     * await skills.placeBlock(bot, "torch", p.x + 1, p.y, p.x, 'side');
+     * let position = world.getPosition(bot);
+     * await skills.placeBlock(bot, "oak_log", position.x + 1, position.y - 1, position.x);
      **/
     if (!mc.getBlockId(blockType)) {
         log(bot, `Invalid block type: ${blockType}.`);
         return false;
     }
 
-    const target_dest = new Vec3(Math.floor(x), Math.floor(y), Math.floor(z));
-    if (bot.modes.isOn('cheat') && !dontCheat) {
-        // invert the facing direction
-        let face = placeOn === 'north' ? 'south' : placeOn === 'south' ? 'north' : placeOn === 'east' ? 'west' : 'east';
-        if (blockType.includes('torch') && placeOn !== 'bottom') {
-            // insert wall_ before torch
-            blockType = blockType.replace('torch', 'wall_torch');
-            if (placeOn !== 'side' && placeOn !== 'top') {
-                blockType += `[facing=${face}]`;
-            }
-        }
-        if (blockType.includes('button') || blockType === 'lever') {
-            if (placeOn === 'top') {
-                blockType += `[face=ceiling]`;
-            }
-            else if (placeOn === 'bottom') {
-                blockType += `[face=floor]`;
-            }
-            else {
-                blockType += `[facing=${face}]`;
-            }
-        }
-        if (blockType === 'ladder' || blockType === 'repeater' || blockType === 'comparator') {
-            blockType += `[facing=${face}]`;
-        }
-
+    if (bot.modes.isOn('cheat') && !no_cheat) {
         let msg = '/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z) + ' ' + blockType;
         bot.chat(msg);
-        if (blockType.includes('door'))
-            bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y+1) + ' ' + Math.floor(z) + ' ' + blockType + '[half=upper]');
-        if (blockType.includes('bed'))
-            bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z-1) + ' ' + blockType + '[part=head]');
-        log(bot, `Used /setblock to place ${blockType} at ${target_dest}.`);
+        log(bot, `Used /setblock to place ${blockType} at ${x}, ${y}, ${z}.`);
         return true;
     }
 
     let block = bot.inventory.items().find(item => item.name === blockType);
-    if (!block && bot.game.gameMode === 'creative') {
-        await bot.creative.setInventorySlot(36, mc.makeItem(blockType, 1)); // 36 is first hotbar slot
-        block = bot.inventory.items().find(item => item.name === blockType);
-    }
     if (!block) {
         log(bot, `Don't have any ${blockType} to place.`);
         return false;
     }
 
+    const target_dest = new Vec3(Math.floor(x), Math.floor(y), Math.floor(z));
     const targetBlock = bot.blockAt(target_dest);
     if (targetBlock.name === blockType) {
         log(bot, `${blockType} already at ${targetBlock.position}.`);
@@ -567,32 +539,12 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
     // get the buildoffblock and facevec based on whichever adjacent block is not empty
     let buildOffBlock = null;
     let faceVec = null;
-    const dir_map = {
-        'top': Vec3(0, 1, 0),
-        'bottom': Vec3(0, -1, 0),
-        'north': Vec3(0, 0, -1),
-        'south': Vec3(0, 0, 1),
-        'east': Vec3(1, 0, 0),
-        'west': Vec3(-1, 0, 0),
-    }
-    let dirs = [];
-    if (placeOn === 'side') {
-        dirs.push(dir_map['north'], dir_map['south'], dir_map['east'], dir_map['west']);
-    }
-    else if (dir_map[placeOn] !== undefined) {
-        dirs.push(dir_map[placeOn]);
-    }
-    else {
-        dirs.push(dir_map['bottom']);
-        log(bot, `Unknown placeOn value "${placeOn}". Defaulting to bottom.`);
-    }
-    dirs.push(...Object.values(dir_map).filter(d => !dirs.includes(d)));
-
+    const dirs = [Vec3(0, -1, 0), Vec3(0, 1, 0), Vec3(1, 0, 0), Vec3(-1, 0, 0), Vec3(0, 0, 1), Vec3(0, 0, -1)];
     for (let d of dirs) {
         const block = bot.blockAt(target_dest.plus(d));
         if (!empty_blocks.includes(block.name)) {
             buildOffBlock = block;
-            faceVec = new Vec3(-d.x, -d.y, -d.z); // invert
+            faceVec = new Vec3(-d.x, -d.y, -d.z);
             break;
         }
     }
@@ -714,6 +666,38 @@ export async function eat(bot, foodName="") {
 }
 
 
+export async function eatSafeFood(bot, foodName="") {
+    /**
+     * Eat the given item if it is safe. If no item is given, it will eat the first safe food item in the bot's inventory.
+     * @param {MinecraftBot} bot, reference to the minecraft bot.
+     * @param {string} item, the item to eat.
+     * @returns {Promise<boolean>} true if the item was eaten, false otherwise.
+     * @example
+     * await skills.eatSafeFood(bot, "apple");
+     **/
+    const forbiddenFoods = ["rotten_flesh", "spider_eye", "poisonous_potato", "pufferfish", "chicken"];
+    let item, name;
+    
+    if (foodName) {
+        item = bot.inventory.items().find(item => item.name === foodName && !forbiddenFoods.includes(item.name));
+        name = foodName;
+    } else {
+        item = bot.inventory.items().find(item => item.foodRecovery > 0 && !forbiddenFoods.includes(item.name));
+        name = "safe food";
+    }
+    
+    if (!item) {
+        log(bot, `You do not have any ${name} to eat.`);
+        return false;
+    }
+    
+    await bot.equip(item, 'hand');
+    await bot.consume();
+    log(bot, `Successfully ate ${item.name}.`);
+    return true;
+}
+
+
 export async function giveToPlayer(bot, itemType, username, num=1) {
     /**
      * Give one of the specified item to the specified player
@@ -725,6 +709,7 @@ export async function giveToPlayer(bot, itemType, username, num=1) {
      * @example
      * await skills.giveToPlayer(bot, "oak_log", "player1");
      **/
+    
     let player = bot.players[username].entity
     if (!player){
         log(bot, `Could not find ${username}.`);
@@ -737,7 +722,7 @@ export async function giveToPlayer(bot, itemType, username, num=1) {
 }
 
 
-export async function goToPosition(bot, x, y, z, min_distance=2) {
+export async function goToPosition(bot, x, y, z, min_distance = 2) {
     /**
      * Navigate to the given position.
      * @param {MinecraftBot} bot, reference to the minecraft bot.
@@ -754,8 +739,12 @@ export async function goToPosition(bot, x, y, z, min_distance=2) {
         log(bot, `Missing coordinates, given x:${x} y:${y} z:${z}`);
         return false;
     }
+    if (bot.pathfinder.isMoving()) {
+        log(bot, 'Already moving, cannot initiate another move.');
+        return false;
+    }
     if (bot.modes.isOn('cheat')) {
-        bot.chat('/tp @s ' + x + ' ' + y + ' ' + z);
+        bot.chat(`/tp @s ${x} ${y} ${z}`);
         log(bot, `Teleported to ${x}, ${y}, ${z}.`);
         return true;
     }
@@ -833,27 +822,34 @@ export async function moveAway(bot, distance) {
      * @example
      * await skills.moveAway(bot, 8);
      **/
+
+    if (bot.pathfinder.isMoving()) {
+        log(bot, 'Already moving, cannot initiate another move.');
+        return false;
+    }
+
     const pos = bot.entity.position;
     let goal = new pf.goals.GoalNear(pos.x, pos.y, pos.z, distance);
-    let inverted_goal = new pf.goals.GoalInvert(goal);
+    let invertedGoal = new pf.goals.GoalInvert(goal);
     bot.pathfinder.setMovements(new pf.Movements(bot));
 
+    
+
     if (bot.modes.isOn('cheat')) {
-        const path = await bot.pathfinder.getPathTo(move, inverted_goal, 10000);
-        let last_move = path.path[path.path.length-1];
-        console.log(last_move);
-        if (last_move) {
-            let x = Math.floor(last_move.x);
-            let y = Math.floor(last_move.y);
-            let z = Math.floor(last_move.z);
-            bot.chat('/tp @s ' + x + ' ' + y + ' ' + z);
+        const path = await bot.pathfinder.getPathTo(bot.entity.position, invertedGoal, 10000);
+        let lastMove = path.path[path.path.length - 1];
+        if (lastMove) {
+            let x = Math.floor(lastMove.x);
+            let y = Math.floor(lastMove.y);
+            let z = Math.floor(lastMove.z);
+            bot.chat(`/tp @s ${x} ${y} ${z}`);
             return true;
         }
     }
 
-    await bot.pathfinder.goto(inverted_goal);
-    let new_pos = bot.entity.position;
-    log(bot, `Moved away from nearest entity to ${new_pos}.`);
+    await bot.pathfinder.goto(invertedGoal);
+    let newPos = bot.entity.position;
+    log(bot, `Moved away from nearest entity to ${newPos}.`);
     return true;
 }
 
@@ -1062,4 +1058,110 @@ export async function activateNearestBlock(bot, type) {
     await bot.activateBlock(block);
     log(bot, `Activated ${type} at x:${block.position.x.toFixed(1)}, y:${block.position.y.toFixed(1)}, z:${block.position.z.toFixed(1)}.`);
     return true;
+}
+
+export async function storeItemsInNearestContainer(bot) {
+    /**
+     * Store all items except tools and weapons from the bot's inventory into the nearest container.
+     * @param {MinecraftBot} bot, reference to the minecraft bot.
+     * @returns {Promise<boolean>} true if items were successfully stored, false otherwise.
+     * @example
+     * await storeItemsInNearestContainer(bot);
+     * **/
+    const containerTypes = ['chest', 'shulker_box']; // 添加其他容器类型
+    let containerBlock = null;
+
+    for (const type of containerTypes) {
+        containerBlock = world.getNearestBlock(bot, type, 16);
+        if (containerBlock) break;
+    }
+
+    if (!containerBlock) {
+        log(bot, `Could not find any container to store items.`);
+        return false;
+    }
+
+    if (bot.entity.position.distanceTo(containerBlock.position) > 4.5) {
+        let pos = containerBlock.position;
+        bot.pathfinder.setMovements(new pf.Movements(bot));
+        await bot.pathfinder.goto(new pf.goals.GoalNear(pos.x, pos.y, pos.z, 4));
+    }
+
+    const container = await bot.openContainer(containerBlock);
+
+    // 定义工具和武器的类型ID或名称
+    const toolsAndWeapons = [
+        'wooden_sword', 'stone_sword', 'iron_sword', 'diamond_sword', 'golden_sword', 'netherite_sword',
+        'wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe', 'diamond_pickaxe', 'golden_pickaxe', 'netherite_pickaxe',
+        'wooden_axe', 'stone_axe', 'iron_axe', 'diamond_axe', 'golden_axe', 'netherite_axe',
+        'wooden_shovel', 'stone_shovel', 'iron_shovel', 'diamond_shovel', 'golden_shovel', 'netherite_shovel',
+        // 'bow', 'crossbow', 'trident',
+        'wooden_hoe', 'stone_hoe', 'iron_hoe', 'diamond_hoe', 'golden_hoe', 'netherite_hoe',
+        'crafting_table'
+    ];
+
+    for (const item of bot.inventory.items()) {
+        if (!toolsAndWeapons.includes(item.name)) {
+            try {
+                await container.deposit(item.type, null, item.count);
+            } catch (err) {
+                log(bot, `Failed to store item ${item.name}: ${err.message}`);
+            }
+        }
+    }
+
+    container.close();
+    log(bot, `Stored items in container at x:${containerBlock.position.x.toFixed(1)}, y:${containerBlock.position.y.toFixed(1)}, z:${containerBlock.position.z.toFixed(1)}.`);
+    return true;
+}
+
+
+export async function Flash(bot, entity, dis) {
+    let currentPos = bot.entity.position;
+    currentPos.y = Number(currentPos.y);
+    let velocity = entity.velocity;
+    let Vx = velocity.x;
+    //let Vy = velocity.y;
+    let Vz = velocity.z;
+    if (Vx < 0 && Vz < 0) {
+        if (Math.abs(Vx) > Math.abs(Vz)) {
+            currentPos.x = Number(currentPos.x) + dis;
+            currentPos.z = Number(currentPos.z) - dis;
+        }
+        else {
+            currentPos.x = Number(currentPos.x) - dis;
+            currentPos.z = Number(currentPos.z) + dis;
+        }
+    }
+    else if (Vx > 0 && Vz < 0) {
+        if (Math.abs(Vx) > Math.abs(Vz)) {
+            currentPos.x = Number(currentPos.x) - dis;
+            currentPos.z = Number(currentPos.z) - dis;
+        }
+        else {
+            currentPos.x = Number(currentPos.x) + dis;
+            currentPos.z = Number(currentPos.z) + dis;
+        }
+    }
+    else if (Vx < 0 && Vz > 0) {
+        if (Math.abs(Vx) > Math.abs(Vz)) {
+            currentPos.x = Number(currentPos.x) + dis;
+            currentPos.z = Number(currentPos.z) + dis;
+        }
+        else {
+            currentPos.x = Number(currentPos.x) - dis;
+            currentPos.z = Number(currentPos.z) - dis;
+        }
+    }
+    else if (Vx > 0 && Vz > 0) {
+        if (Math.abs(Vx) > Math.abs(Vz)) {
+            currentPos.x = Number(currentPos.x) - dis;
+            currentPos.z = Number(currentPos.z) + dis;
+        }
+        else {
+            currentPos.x = Number(currentPos.x) + dis;
+            currentPos.z = Number(currentPos.z) - dis;
+        }
+    }
+    bot.lookAt(currentPos);
 }

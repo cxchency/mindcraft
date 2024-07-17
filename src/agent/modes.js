@@ -2,79 +2,84 @@ import * as skills from './library/skills.js';
 import * as world from './library/world.js';
 import * as mc from '../utils/mcdata.js';
 
+// 模式是在每个游戏 tick 被调用的函数，用于立即响应世界的变化
+// 每个模式具有以下字段：
+// on: 是否每个 tick 都调用 'update'
+// active: 是否模式触发了一个行动且还未完成
+// paused: 是否模式被其他行动暂停（例如 followplayer 模式实现了自己的防御机制）
+// update: 每个 tick 被调用的函数（如果 on 为 true）
+// 当模式 active 时，会触发一个行动但不会等待其返回结果
 
-// a mode is a function that is called every tick to respond immediately to the world
-// it has the following fields:
-// on: whether 'update' is called every tick
-// active: whether an action has been triggered by the mode and hasn't yet finished
-// paused: whether the mode is paused by another action that overrides the behavior (eg followplayer implements its own self defense)
-// update: the function that is called every tick (if on is true)
-// when a mode is active, it will trigger an action to be performed but won't wait for it to return output
-
-// the order of this list matters! first modes will be prioritized
-// while update functions are async, they should *not* be awaited longer than ~100ms as it will block the update loop
-// to perform longer actions, use the execute function which won't block the update loop
+// 这个列表的顺序很重要！优先处理排在前面的模式
+// 虽然 update 函数是异步的，但不应该等待超过约 100ms，因为会阻塞更新循环
+// 若要执行更长时间的操作，应使用 execute 函数，它不会阻塞更新循环
 const modes = [
     {
         name: 'self_preservation',
-        description: 'Respond to drowning, burning, and damage at low health. Interrupts other actions.',
+        description: '响应溺水、燃烧、低血量、弓箭射击和玩家攻击时的伤害。中断其他动作。',
         interrupts: ['all'],
         on: true,
         active: false,
-        fall_blocks: ['sand', 'gravel', 'concrete_powder'], // includes matching substrings like 'sandstone' and 'red_sand'
+        fall_blocks: ['sand', 'gravel', 'concrete_powder'], // 包含子串匹配，如 'sandstone' 和 'red_sand'
         update: async function (agent) {
             const bot = agent.bot;
             let block = bot.blockAt(bot.entity.position);
             let blockAbove = bot.blockAt(bot.entity.position.offset(0, 1, 0));
-            if (!block) block = {name: 'air'}; // hacky fix when blocks are not loaded
+            if (!block) block = {name: 'air'}; // 当方块未加载时的临时修复
             if (!blockAbove) blockAbove = {name: 'air'};
+    
+            // 溺水检测
             if (blockAbove.name === 'water' || blockAbove.name === 'flowing_water') {
-                // does not call execute so does not interrupt other actions
+                // 不调用 execute，因此不会中断其他动作
                 if (!bot.pathfinder.goal) {
                     bot.setControlState('jump', true);
                 }
             }
+            // 下落方块检测
             else if (this.fall_blocks.some(name => blockAbove.name.includes(name))) {
                 execute(this, agent, async () => {
                     await skills.moveAway(bot, 2);
                 });
             }
+            // 岩浆、火焰检测
             else if (block.name === 'lava' || block.name === 'flowing_lava' || block.name === 'fire' ||
                 blockAbove.name === 'lava' || blockAbove.name === 'flowing_lava' || blockAbove.name === 'fire') {
-                bot.chat('I\'m on fire!'); // TODO: gets stuck in lava
+                bot.chat('我着火了！');
                 execute(this, agent, async () => {
                     let nearestWater = world.getNearestBlock(bot, 'water', 20);
                     if (nearestWater) {
                         const pos = nearestWater.position;
                         await skills.goToPosition(bot, pos.x, pos.y, pos.z, 0.2);
-                        bot.chat('Ahhhh that\'s better!');
+                        bot.chat('啊，好多了！');
                     }
                     else {
                         await skills.moveAway(bot, 5);
                     }
                 });
             }
-            else if (Date.now() - bot.lastDamageTime < 3000 && (bot.health < 5 || bot.lastDamageTaken >= bot.health)) {
-                bot.chat('I\'m dying!');
+            // 低血量检测
+            else if (Date.now() - bot.lastDamageTime < 1000 && (bot.health < 5 || bot.lastDamageTaken >= bot.health)) {
                 execute(this, agent, async () => {
-                    await skills.moveAway(bot, 20);
+                    // await skills.moveAway(bot, 20);
                 });
             }
-            else if (agent.isIdle()) {
-                bot.clearControlStates(); // clear jump if not in danger or doing anything else
+    
+            // 如果没有危险或在做其他事情，则清除跳跃状态
+            if (agent.isIdle()) {
+                bot.clearControlStates();
             }
         }
     },
     {
         name: 'cowardice',
-        description: 'Run away from enemies. Interrupts other actions.',
+        description: '逃离敌人。中断其他动作。',
         interrupts: ['all'],
         on: true,
         active: false,
         update: async function (agent) {
             const enemy = world.getNearestEntityWhere(agent.bot, entity => mc.isHostile(entity), 16);
             if (enemy && await world.isClearPath(agent.bot, enemy)) {
-                agent.bot.chat(`Aaa! A ${enemy.name}!`);
+                agent.bot.chat(`啊！有${enemy.name}！`);
                 execute(this, agent, async () => {
                     await skills.avoidEnemies(agent.bot, 24);
                 });
@@ -83,14 +88,14 @@ const modes = [
     },
     {
         name: 'self_defense',
-        description: 'Attack nearby enemies. Interrupts other actions.',
+        description: '攻击附近的敌人。中断其他动作。',
         interrupts: ['all'],
         on: true,
         active: false,
         update: async function (agent) {
-            const enemy = world.getNearestEntityWhere(agent.bot, entity => mc.isHostile(entity), 8);
+            const enemy = world.getNearestEntityWhere(agent.bot, entity => mc.isHostile(entity), 16);
             if (enemy && await world.isClearPath(agent.bot, enemy)) {
-                agent.bot.chat(`Fighting ${enemy.name}!`);
+                // agent.bot.chat(`正在和${enemy.name}战斗！`);
                 execute(this, agent, async () => {
                     await skills.defendSelf(agent.bot, 8);
                 });
@@ -99,7 +104,7 @@ const modes = [
     },
     {
         name: 'hunting',
-        description: 'Hunt nearby animals when idle.',
+        description: '在空闲时狩猎附近的动物。',
         interrupts: ['defaults'],
         on: true,
         active: false,
@@ -107,30 +112,49 @@ const modes = [
             const huntable = world.getNearestEntityWhere(agent.bot, entity => mc.isHuntable(entity), 8);
             if (huntable && await world.isClearPath(agent.bot, huntable)) {
                 execute(this, agent, async () => {
-                    agent.bot.chat(`Hunting ${huntable.name}!`);
+                    agent.bot.chat(`正在狩猎${huntable.name}！`);
                     await skills.attackEntity(agent.bot, huntable);
                 });
             }
         }
     },
     {
+        name: 'pvp',
+        description: '杀戮模式，攻击附近的玩家',
+        interrupts: ['defaults'],
+        on: false,
+        active: false,
+        update: async function (agent) {
+            const target = agent.bot.nearestEntity((e) => {
+                return (e.type === 'player' && e.username !== 'cxchency') && e.position.distanceTo(agent.bot.entity.position) < 64;
+            });
+            
+            if (target && await world.isClearPath(agent.bot, target)) {
+                execute(this, agent, async () => {
+                    // agent.bot.chat(`正在攻击玩家 ${target.username}！`);
+                    await skills.attackEntity(agent.bot, target);
+                });
+            }
+        }
+    },
+    {
         name: 'item_collecting',
-        description: 'Collect nearby items when idle.',
+        description: '在空闲时收集附近的物品。',
         interrupts: ['followPlayer'],
         on: true,
         active: false,
 
-        wait: 2, // number of seconds to wait after noticing an item to pick it up
+        wait: 2, // 发现物品后等待的秒数
         prev_item: null,
         noticed_at: -1,
         update: async function (agent) {
-            let item = world.getNearestEntityWhere(agent.bot, entity => entity.name === 'item', 8);
+            let item = world.getNearestEntityWhere(agent.bot, entity => entity.name === 'item', 3);
             if (item && item !== this.prev_item && await world.isClearPath(agent.bot, item)) {
                 if (this.noticed_at === -1) {
                     this.noticed_at = Date.now();
                 }
                 if (Date.now() - this.noticed_at > this.wait * 1000) {
-                    agent.bot.chat(`Picking up ${item.name}!`);
+                    // agent.bot.chat(`正在拾取${item.name}！`);
                     this.prev_item = item;
                     execute(this, agent, async () => {
                         await skills.pickupNearbyItems(agent.bot);
@@ -145,9 +169,9 @@ const modes = [
     },
     {
         name: 'torch_placing',
-        description: 'Place torches when idle and there are no torches nearby.',
+        description: '在空闲时放置火把，且周围没有火把时。',
         interrupts: ['followPlayer'],
-        on: true,
+        on: false,
         active: false,
         cooldown: 5,
         last_place: Date.now(),
@@ -156,7 +180,7 @@ const modes = [
                 if (Date.now() - this.last_place < this.cooldown * 1000) return;
                 execute(this, agent, async () => {
                     const pos = agent.bot.entity.position;
-                    await skills.placeBlock(agent.bot, 'torch', pos.x, pos.y, pos.z, 'bottom', true);
+                    await skills.placeBlock(agent.bot, 'torch', pos.x, pos.y, pos.z, true);
                 });
                 this.last_place = Date.now();
             }
@@ -164,7 +188,7 @@ const modes = [
     },
     {
         name: 'idle_staring',
-        description: 'Animation to look around at entities when idle.',
+        description: '空闲时观察附近实体的动画。',
         interrupts: [],
         on: true,
         active: false,
@@ -188,7 +212,7 @@ const modes = [
             if (!entity_in_view)
                 this.last_entity = null;
             if (Date.now() > this.next_change) {
-                // look in random direction
+                // 随机看向一个方向
                 this.staring = Math.random() < 0.3;
                 if (!this.staring) {
                     const yaw = Math.random() * Math.PI * 2;
@@ -201,11 +225,11 @@ const modes = [
     },
     {
         name: 'cheat',
-        description: 'Use cheats to instantly place blocks and teleport.',
+        description: '使用作弊功能来快速放置方块和传送。',
         interrupts: [],
         on: false,
         active: false,
-        update: function (agent) { /* do nothing */ }
+        update: function (agent) { /* 什么也不做 */ }
     }
 ];
 
@@ -215,7 +239,7 @@ async function execute(mode, agent, func, timeout=-1) {
         await func();
     }, timeout);
     mode.active = false;
-    console.log(`Mode ${mode.name} finished executing, code_return: ${code_return.message}`);
+    console.log(`模式 ${mode.name} 执行完毕，返回信息: ${code_return.message}`);
 }
 
 class ModeController {
@@ -245,17 +269,17 @@ class ModeController {
     }
 
     getStr() {
-        let res = 'Available Modes:';
+        let res = '可用模式:';
         for (let mode of this.modes_list) {
-            let on = mode.on ? 'ON' : 'OFF';
-            res += `\n- ${mode.name}(${on}): ${mode.description}`;
+            let on = mode.on ? '开启' : '关闭';
+            res += `\n- ${mode.name}(${on})：${mode.description}`;
         }
         return res;
     }
 
     unPauseAll() {
         for (let mode of this.modes_list) {
-            if (mode.paused) console.log(`Unpausing mode ${mode.name}`);
+            if (mode.paused) console.log(`恢复模式 ${mode.name}`);
             mode.paused = false;
         }
     }
@@ -284,7 +308,7 @@ class ModeController {
 
     loadJson(json) {
         for (let mode of this.modes_list) {
-            if (json[mode.name] != undefined) {
+            if (json[mode.name] !== undefined) {
                 mode.on = json[mode.name];
             }
         }
@@ -292,7 +316,7 @@ class ModeController {
 }
 
 export function initModes(agent) {
-    // the mode controller is added to the bot object so it is accessible from anywhere the bot is used
+    // 将模式控制器添加到 bot 对象，以便在 bot 使用的任何地方都能访问
     agent.bot.modes = new ModeController(agent);
     let modes = agent.prompter.getInitModes();
     if (modes) {

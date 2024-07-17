@@ -29,7 +29,8 @@ export class History {
     async add(name, content) {
         let role = 'assistant';
         if (name === 'system') {
-            role = 'system';
+            role = 'user';
+            content = `SYSTEM: ${content}`;
         }
         else if (name !== this.name) {
             role = 'user';
@@ -42,7 +43,7 @@ export class History {
             let to_summarize = [this.turns.shift()];
             while (this.turns[0].role != 'user' && this.turns.length > 1)
                 to_summarize.push(this.turns.shift());
-            await this.storeMemories(to_summarize);
+            // await this.storeMemories(to_summarize);
         }
     }
 

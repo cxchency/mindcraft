@@ -10,128 +10,128 @@ const pad = (str) => {
 export const queryList = [
     {
         name: "!stats",
-        description: "Get your bot's location, health, hunger, and time of day.", 
+        description: "获取机器人的位置、健康值、饥饿值和时间。",
         perform: function (agent) {
             let bot = agent.bot;
-            let res = 'STATS';
+            let res = '状态';
             let pos = bot.entity.position;
-            // display position to 2 decimal places
-            res += `\n- Position: x: ${pos.x.toFixed(2)}, y: ${pos.y.toFixed(2)}, z: ${pos.z.toFixed(2)}`;
-            res += `\n- Gamemode: ${bot.game.gameMode}`;
-            res += `\n- Health: ${Math.round(bot.health)} / 20`;
-            res += `\n- Hunger: ${Math.round(bot.food)} / 20`;
-            res += `\n- Biome: ${world.getBiomeName(bot)}`;
-            let weather = "Clear";
+            // 显示保留两位小数的位置
+            res += `\n- 位置: x: ${pos.x.toFixed(2)}, y: ${pos.y.toFixed(2)}, z: ${pos.z.toFixed(2)}`;
+            res += `\n- 游戏模式: ${bot.game.gameMode}`;
+            res += `\n- 健康值: ${Math.round(bot.health)} / 20`;
+            res += `\n- 饥饿值: ${Math.round(bot.food)} / 20`;
+            res += `\n- 生物群系: ${world.getBiomeName(bot)}`;
+            let weather = "晴天";
             if (bot.rainState > 0)
-                weather = "Rain";
+                weather = "雨天";
             if (bot.thunderState > 0)
-                weather = "Thunderstorm";
-            res += `\n- Weather: ${weather}`;
+                weather = "雷暴";
+            res += `\n- 天气: ${weather}`;
             // let block = bot.blockAt(pos);
-            // res += `\n- Artficial light: ${block.skyLight}`;
-            // res += `\n- Sky light: ${block.light}`;
-            // light properties are bugged, they are not accurate
+            // res += `\n- 人造光: ${block.skyLight}`;
+            // res += `\n- 天空光: ${block.light}`;
+            // 光照属性有问题，不准确
 
             if (bot.time.timeOfDay < 6000) {
-                res += '\n- Time: Morning';
+                res += '\n- 时间: 早晨';
             } else if (bot.time.timeOfDay < 12000) {
-                res += '\n- Time: Afternoon';
+                res += '\n- 时间: 下午';
             } else {
-                res += '\n- Time: Night';
+                res += '\n- 时间: 晚上';
             }
 
             let other_players = world.getNearbyPlayerNames(bot);
             if (other_players.length > 0) {
-                res += '\n- Other Players: ' + other_players.join(', ');
+                res += '\n- 其他玩家: ' + other_players.join(', ');
             }
             return pad(res);
         }
     },
     {
         name: "!inventory",
-        description: "Get your bot's inventory.",
+        description: "获取机器人的库存。",
         perform: function (agent) {
             let bot = agent.bot;
             let inventory = world.getInventoryCounts(bot);
-            let res = 'INVENTORY';
+            let res = '库存';
             for (const item in inventory) {
                 if (inventory[item] && inventory[item] > 0)
                     res += `\n- ${item}: ${inventory[item]}`;
             }
-            if (res === 'INVENTORY') {
-                res += ': none';
+            if (res === '库存') {
+                res += ': 无';
             }
             else if (agent.bot.game.gameMode === 'creative') {
-                res += '\n(You have infinite items in creative mode)';
+                res += '\n(你在创造模式中有无限物品)';
             }
             return pad(res);
         }
     },
     {
         name: "!nearbyBlocks",
-        description: "Get the blocks near the bot.",
+        description: "获取机器人附近的方块。",
         perform: function (agent) {
             let bot = agent.bot;
-            let res = 'NEARBY_BLOCKS';
+            let res = '附近的方块';
             let blocks = world.getNearbyBlockTypes(bot);
             for (let i = 0; i < blocks.length; i++) {
                 res += `\n- ${blocks[i]}`;
             }
             if (blocks.length == 0) {
-                res += ': none';
+                res += ': 无';
             }
             return pad(res);
         }
     },
     {
         name: "!craftable",
-        description: "Get the craftable items with the bot's inventory.",
+        description: "根据机器人的库存获取可制作的物品。",
         perform: function (agent) {
             const bot = agent.bot;
             const table = world.getNearestBlock(bot, 'crafting_table');
-            let res = 'CRAFTABLE_ITEMS';
+            let res = '可制作的物品';
             for (const item of mc.getAllItems()) {
                 let recipes = bot.recipesFor(item.id, null, 1, table);
                 if (recipes.length > 0) {
                     res += `\n- ${item.name}`;
                 }
             }
-            if (res == 'CRAFTABLE_ITEMS') {
-                res += ': none';
+            if (res == '可制作的物品') {
+                res += ': 无';
             }
             return pad(res);
         }
     },
     {
         name: "!entities",
-        description: "Get the nearby players and entities.",
+        description: "获取附近的玩家和实体。",
         perform: function (agent) {
             let bot = agent.bot;
-            let res = 'NEARBY_ENTITIES';
+            let res = '附近的实体';
             for (const entity of world.getNearbyPlayerNames(bot)) {
-                res += `\n- player: ${entity}`;
+                res += `\n- 玩家: ${entity}`;
             }
             for (const entity of world.getNearbyEntityTypes(bot)) {
-                res += `\n- mob: ${entity}`;
+                res += `\n- 生物: ${entity}`;
             }
-            if (res == 'NEARBY_ENTITIES') {
-                res += ': none';
+            if (res == '附近的实体') {
+                res += ': 无';
             }
             return pad(res);
         }
     },
     {
         name: "!modes",
-        description: "Get all available modes and see which are on/off.",
+        description: "获取所有可用模式并查看其开/关状态。",
         perform: function (agent) {
             return agent.bot.modes.getStr();
         }
     },
-    {
-        name: '!savedPlaces',
-        description: 'List all saved locations.',
-        perform: async function (agent) {
-            return "Saved place names: " + agent.memory_bank.getKeys();
-        }
-    }
+    // {
+    //     name: '!savedPlaces',
+    //     description: '列出所有已保存的位置。',
+    //     perform: async function (agent) {
+    //         return "已保存的位置名称: " + agent.memory_bank.getKeys();
+    //     }
+    // }
 ];

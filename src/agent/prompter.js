@@ -154,7 +154,7 @@ export class Prompter {
 
     async promptConvo(messages) {
         let prompt = this.profile.conversing;
-        prompt = await this.replaceStrings(prompt, messages, this.convo_examples);
+        prompt = await this.replaceStrings(prompt, messages); //, this.convo_examples
         return await this.chat_model.sendRequest(messages, prompt);
     }
 

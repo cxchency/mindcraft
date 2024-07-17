@@ -1,14 +1,13 @@
 import pf from 'mineflayer-pathfinder';
 import * as mc from '../../utils/mcdata.js';
 
-
 export function getNearestFreeSpace(bot, size=1, distance=8) {
     /**
-     * Get the nearest empty space with solid blocks beneath it of the given size.
-     * @param {Bot} bot - The bot to get the nearest free space for.
-     * @param {number} size - The (size x size) of the space to find, default 1.
-     * @param {number} distance - The maximum distance to search, default 8.
-     * @returns {Vec3} - The south west corner position of the nearest free space.
+     * 获取给定尺寸的最近的空闲空间，该空间下方有坚固的方块。
+     * @param {Bot} bot - 需要获取最近空闲空间的机器人。
+     * @param {number} size - 要查找的空间尺寸（size x size），默认值为1。
+     * @param {number} distance - 最大搜索距离，默认值为8。
+     * @returns {Vec3} - 最近的空闲空间的西南角位置。
      * @example
      * let position = world.getNearestFreeSpace(bot, 1, 8);
      **/
@@ -25,7 +24,7 @@ export function getNearestFreeSpace(bot, size=1, distance=8) {
             for (let z = 0; z < size; z++) {
                 let top = bot.blockAt(empty_pos[i].offset(x, 0, z));
                 let bottom = bot.blockAt(empty_pos[i].offset(x, -1, z));
-                if (!top || !top.name == 'air' || !bottom || bottom.drops.length == 0 || !bottom.diggable) {
+                if (!top || top.name !== 'air' || !bottom || bottom.drops.length === 0 || !bottom.diggable) {
                     empty = false;
                     break;
                 }
@@ -38,26 +37,22 @@ export function getNearestFreeSpace(bot, size=1, distance=8) {
     }
 }
 
-
-export function getNearestBlocks(bot, block_types=null, distance=16, count=10000) {
+export function getNearestBlocks(bot, block_types=null, distance=128, count=10000) {
     /**
-     * Get a list of the nearest blocks of the given types.
-     * @param {Bot} bot - The bot to get the nearest block for.
-     * @param {string[]} block_types - The names of the blocks to search for.
-     * @param {number} distance - The maximum distance to search, default 16.
-     * @param {number} count - The maximum number of blocks to find, default 10000.
-     * @returns {Block[]} - The nearest blocks of the given type.
+     * 获取给定类型的最近的方块列表。
+     * @param {Bot} bot - 需要获取最近方块的机器人。
+     * @param {string[]} block_types - 要搜索的方块名称列表。
+     * @param {number} distance - 最大搜索距离，默认值为16。
+     * @param {number} count - 要查找的最大方块数量，默认值为10000。
+     * @returns {Block[]} - 给定类型的最近的方块。
      * @example
      * let woodBlocks = world.getNearestBlocks(bot, ['oak_log', 'birch_log'], 16, 1);
      **/
-    // if blocktypes is not a list, make it a list
     let block_ids = [];
     if (block_types === null) {
         block_ids = mc.getAllBlockIds(['air']);
-    }
-    else {
-        if (!Array.isArray(block_types))
-            block_types = [block_types];
+    } else {
+        if (!Array.isArray(block_types)) block_types = [block_types];
         for(let block_type of block_types) {
             block_ids.push(mc.getBlockId(block_type));
         }
@@ -72,70 +67,50 @@ export function getNearestBlocks(bot, block_types=null, distance=16, count=10000
     }
     blocks.sort((a, b) => a.distance - b.distance);
 
-    let res = [];
-    for (let i = 0; i < blocks.length; i++) {
-        res.push(blocks[i].block);
-    }
-    return res;
+    return blocks.map(block => block.block);
 }
 
-
-export function getNearestBlock(bot, block_type, distance=16) {
-     /**
-     * Get the nearest block of the given type.
-     * @param {Bot} bot - The bot to get the nearest block for.
-     * @param {string} block_type - The name of the block to search for.
-     * @param {number} distance - The maximum distance to search, default 16.
-     * @returns {Block} - The nearest block of the given type.
+export function getNearestBlock(bot, block_type, distance=64) {
+    /**
+     * 获取给定类型的最近的方块。
+     * @param {Bot} bot - 需要获取最近方块的机器人。
+     * @param {string} block_type - 要搜索的方块名称。
+     * @param {number} distance - 最大搜索距离，默认值为16。
+     * @returns {Block} - 给定类型的最近的方块。
      * @example
      * let coalBlock = world.getNearestBlock(bot, 'coal_ore', 16);
      **/
     let blocks = getNearestBlocks(bot, block_type, distance, 1);
-    if (blocks.length > 0) {
-        return blocks[0];
-    }
-    return null;
+    return blocks.length > 0 ? blocks[0] : null;
 }
 
-
-export function getNearbyEntities(bot, maxDistance=16) {
+export function getNearbyEntities(bot, maxDistance=64) {
     let entities = [];
     for (const entity of Object.values(bot.entities)) {
         const distance = entity.position.distanceTo(bot.entity.position);
-        if (distance > maxDistance) continue;
-        entities.push({ entity: entity, distance: distance });
+        if (distance <= maxDistance) {
+            entities.push({ entity: entity, distance: distance });
+        }
     }
     entities.sort((a, b) => a.distance - b.distance);
-    let res = [];
-    for (let i = 0; i < entities.length; i++) {
-        res.push(entities[i].entity);
-    }
-    return res;
+    return entities.map(entity => entity.entity);
 }
 
 export function getNearestEntityWhere(bot, predicate, maxDistance=16) {
     return bot.nearestEntity(entity => predicate(entity) && bot.entity.position.distanceTo(entity.position) < maxDistance);
 }
 
-
-export function getNearbyPlayers(bot, maxDistance) {
-    if (maxDistance == null) maxDistance = 16;
+export function getNearbyPlayers(bot, maxDistance=64) {
     let players = [];
     for (const entity of Object.values(bot.entities)) {
         const distance = entity.position.distanceTo(bot.entity.position);
-        if (distance > maxDistance) continue;
-        if (entity.type == 'player' && entity.username != bot.username) {
+        if (distance <= maxDistance && entity.type === 'player' && entity.username !== bot.username) {
             players.push({ entity: entity, distance: distance });
-        } 
+        }
     }
     players.sort((a, b) => a.distance - b.distance);
-    let res = [];
-    for (let i = 0; i < players.length; i++) {
-        res.push(players[i].entity);
-    }
-    return res;
+    return players.map(player => player.entity);
 }
-
 
 export function getInventoryStacks(bot) {
     let inventory = [];
@@ -147,12 +122,11 @@ export function getInventoryStacks(bot) {
     return inventory;
 }
 
-
 export function getInventoryCounts(bot) {
     /**
-     * Get an object representing the bot's inventory.
-     * @param {Bot} bot - The bot to get the inventory for.
-     * @returns {object} - An object with item names as keys and counts as values.
+     * 获取机器人的物品数量对象。
+     * @param {Bot} bot - 需要获取物品数量的机器人。
+     * @returns {object} - 以物品名称为键，数量为值的对象。
      * @example
      * let inventory = world.getInventoryCounts(bot);
      * let oakLogCount = inventory['oak_log'];
@@ -170,12 +144,11 @@ export function getInventoryCounts(bot) {
     return inventory;
 }
 
-
 export function getPosition(bot) {
     /**
-     * Get your position in the world (Note that y is vertical).
-     * @param {Bot} bot - The bot to get the position for.
-     * @returns {Vec3} - An object with x, y, and x attributes representing the position of the bot.
+     * 获取机器人的世界位置（注意y是垂直方向）。
+     * @param {Bot} bot - 需要获取位置的机器人。
+     * @returns {Vec3} - 表示机器人位置的x、y、z属性对象。
      * @example
      * let position = world.getPosition(bot);
      * let x = position.x;
@@ -183,16 +156,15 @@ export function getPosition(bot) {
     return bot.entity.position;
 }
 
-
 export function getNearbyEntityTypes(bot) {
     /**
-     * Get a list of all nearby mob types.
-     * @param {Bot} bot - The bot to get nearby mobs for.
-     * @returns {string[]} - A list of all nearby mobs.
+     * 获取所有附近实体类型的列表。
+     * @param {Bot} bot - 需要获取附近实体的机器人。
+     * @returns {string[]} - 所有附近实体类型的列表。
      * @example
      * let mobs = world.getNearbyEntityTypes(bot);
      **/
-    let mobs = getNearbyEntities(bot, 16);
+    let mobs = getNearbyEntities(bot, 64);
     let found = [];
     for (let i = 0; i < mobs.length; i++) {
         if (!found.includes(mobs[i].name)) {
@@ -202,32 +174,30 @@ export function getNearbyEntityTypes(bot) {
     return found;
 }
 
-
 export function getNearbyPlayerNames(bot) {
     /**
-     * Get a list of all nearby player names.
-     * @param {Bot} bot - The bot to get nearby players for.
-     * @returns {string[]} - A list of all nearby players.
+     * 获取所有附近玩家名称的列表。
+     * @param {Bot} bot - 需要获取附近玩家的机器人。
+     * @returns {string[]} - 所有附近玩家的列表。
      * @example
      * let players = world.getNearbyPlayerNames(bot);
      **/
-    let players = getNearbyPlayers(bot, 16);
+    let players = getNearbyPlayers(bot, 64);
     let found = [];
     for (let i = 0; i < players.length; i++) {
-        if (!found.includes(players[i].username) && players[i].username != bot.username) {
+        if (!found.includes(players[i].username) && players[i].username !== bot.username) {
             found.push(players[i].username);
         }
     }
     return found;
 }
 
-
 export function getNearbyBlockTypes(bot, distance=16) {
     /**
-     * Get a list of all nearby block names.
-     * @param {Bot} bot - The bot to get nearby blocks for.
-     * @param {number} distance - The maximum distance to search, default 16.
-     * @returns {string[]} - A list of all nearby blocks.
+     * 获取所有附近方块名称的列表。
+     * @param {Bot} bot - 需要获取附近方块的机器人。
+     * @param {number} distance - 最大搜索距离，默认值为16。
+     * @returns {string[]} - 所有附近方块的列表。
      * @example
      * let blocks = world.getNearbyBlockTypes(bot);
      **/
@@ -243,12 +213,12 @@ export function getNearbyBlockTypes(bot, distance=16) {
 
 export async function isClearPath(bot, target) {
     /**
-     * Check if there is a path to the target that requires no digging or placing blocks.
-     * @param {Bot} bot - The bot to get the path for.
-     * @param {Entity} target - The target to path to.
-     * @returns {boolean} - True if there is a clear path, false otherwise.
+     * 检查到目标的路径是否无需挖掘或放置方块。
+     * @param {Bot} bot - 需要获取路径的机器人。
+     * @param {Entity} target - 需要路径到达的目标。
+     * @returns {boolean} - 如果有清晰的路径，返回true，否则返回false。
      */
-    let movements = new pf.Movements(bot)
+    let movements = new pf.Movements(bot);
     movements.canDig = false;
     movements.canPlaceOn = false;
     let goal = new pf.goals.GoalNear(target.position.x, target.position.y, target.position.z, 1);
@@ -261,8 +231,6 @@ export function shouldPlaceTorch(bot) {
     const pos = getPosition(bot);
     // TODO: check light level instead of nearby torches, block.light is broken
     let nearest_torch = getNearestBlock(bot, 'torch', 6);
-    if (!nearest_torch)
-        nearest_torch = getNearestBlock(bot, 'wall_torch', 6);
     if (!nearest_torch) {
         const block = bot.blockAt(pos);
         let has_torch = bot.inventory.items().find(item => item.name === 'torch');
@@ -273,9 +241,9 @@ export function shouldPlaceTorch(bot) {
 
 export function getBiomeName(bot) {
     /**
-     * Get the name of the biome the bot is in.
-     * @param {Bot} bot - The bot to get the biome for.
-     * @returns {string} - The name of the biome.
+     * 获取机器人的所在生物群系名称。
+     * @param {Bot} bot - 需要获取生物群系名称的机器人。
+     * @returns {string} - 生物群系的名称。
      * @example
      * let biome = world.getBiomeName(bot);
      **/
